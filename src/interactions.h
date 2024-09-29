@@ -5,7 +5,7 @@
 #include <thrust/random.h>
 // CHECKITOUT
 /**
- * Computes a cosine-weighted random direction in a hemisphere.
+ * Computes a normalized, cosine-weighted random direction in a hemisphere.
  * Used for diffuse lighting.
  */
 __host__ __device__ glm::vec3 calculateRandomDirectionInHemisphere(

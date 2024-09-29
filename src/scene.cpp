@@ -51,6 +51,7 @@ void Scene::loadFromJSON(const std::string& jsonName)
         {
             const auto& col = p["RGB"];
             newMaterial.color = glm::vec3(col[0], col[1], col[2]);
+            newMaterial.hasReflective = 1.0f;
         }
         MatNameToID[name] = materials.size();
         materials.emplace_back(newMaterial);
@@ -97,6 +98,7 @@ void Scene::loadFromJSON(const std::string& jsonName)
     camera.position = glm::vec3(pos[0], pos[1], pos[2]);
     camera.lookAt = glm::vec3(lookat[0], lookat[1], lookat[2]);
     camera.up = glm::vec3(up[0], up[1], up[2]);
+    camera.aperture = cameraData["APERTURE"];
 
     //calculate fov based on resolution
     float yscaled = tan(fovy * (PI / 180));
