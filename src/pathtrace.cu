@@ -22,8 +22,11 @@
 
 #define ENABLE_ANTI_ALIASING
 #define ENABLE_STREAMCOMPACTION
-// #define ENABLE_MATERIAL_SORTING
-#define ENABLE_DEPTH_OF_FIELD
+//#define ENABLE_MATERIAL_SORTING
+//#define ENABLE_DEPTH_OF_FIELD
+//#define ENABLE_STRATIFIED
+
+#define NUM_CELLS_STRATIFIED 200
 
 #define FILENAME (strrchr(__FILE__, '/') ? strrchr(__FILE__, '/') + 1 : __FILE__)
 #define checkCUDAError(msg) checkCUDAErrorFn(msg, FILENAME, __LINE__)
@@ -58,20 +61,24 @@ thrust::default_random_engine makeSeededRandomEngine(int iter, int index, int de
 }
 
 
-__device__ glm::vec2 sampleRandomJittered(glm::vec2 uniform, int gridCells, int numSample)
+__device__ glm::vec2 sampleRandomStratified(glm::vec2 uniform, int numSample)
 {
-    // Samples (int) sqrt(numTotalSamples) from a jittered distribution
-    // If more samples are sampled, they will be random over the entire domain
-    int numCellsPerSide = (int)sqrtf(gridCells);
-    float gridLength = 1.0f / numCellsPerSide;
+#   ifdef ENABLE_STRATIFIED
+        // Samples (int) sqrt(numTotalSamples) from a stratified distribution
+        // If more samples are sampled, they will be random over the entire domain
+        int numCellsPerSide = (int)sqrtf(NUM_CELLS_STRATIFIED);
+        float gridLength = 1.0f / numCellsPerSide;
 
-    if (numSample >= numCellsPerSide * numCellsPerSide) return uniform;
+        if (numSample >= numCellsPerSide * numCellsPerSide) return uniform;
 
-    glm::vec2 gridIdx;
-    gridIdx.y = numSample / numCellsPerSide;
-    gridIdx.x = numSample - gridIdx.y * numCellsPerSide;
+        glm::vec2 gridIdx;
+        gridIdx.y = numSample / numCellsPerSide;
+        gridIdx.x = numSample - gridIdx.y * numCellsPerSide;
 
-    return (gridIdx + uniform) * gridLength;
+        return (gridIdx + uniform) * gridLength;
+#   else
+        return uniform;
+#   endif
 }
 
 __device__ glm::vec2 transformToDisk(const glm::vec2 squareInput)
@@ -96,7 +103,7 @@ __device__ glm::vec2 transformToDisk(const glm::vec2 squareInput)
     return r * glm::vec2{ cosf(theta), sinf(theta) };
 }
 
-__device__ inline float convertLinearToSRGB(float linear)
+__host__ __device__ inline float convertLinearToSRGB(float linear)
 {
     // taken from https://en.wikipedia.org/wiki/SRGB#Transformation
     if (linear <= 0.0031308f)
@@ -226,9 +233,9 @@ __global__ void generateRayFromCamera(Camera cam, int iter, int traceDepth, Path
 
     // TODO: implement antialiasing by jittering the ray
 #   ifdef ENABLE_ANTI_ALIASING
-        thrust::default_random_engine rng_aa = makeSeededRandomEngine(iter, index, 0);
+        thrust::default_random_engine rng_aa = makeSeededRandomEngine(iter, index, -1);
         thrust::uniform_real_distribution<float> aaOffset(0, 1);
-        glm::vec2 aaOffsetVec = sampleRandomJittered(glm::vec2{ aaOffset(rng_aa), aaOffset(rng_aa) }, 1000, iter);
+        glm::vec2 aaOffsetVec = sampleRandomStratified(glm::vec2{ aaOffset(rng_aa), aaOffset(rng_aa) }, iter);
         ray.direction = glm::normalize(cam.view
             - cam.right * cam.pixelLength.x * ((float)x - (float)cam.resolution.x * 0.5f - aaOffsetVec.x)
             - cam.up    * cam.pixelLength.y * ((float)y - (float)cam.resolution.y * 0.5f - aaOffsetVec.y)
@@ -242,13 +249,11 @@ __global__ void generateRayFromCamera(Camera cam, int iter, int traceDepth, Path
 
 #   ifdef ENABLE_DEPTH_OF_FIELD
         // use different random engines for DoF and AA
-        thrust::default_random_engine rng_dof = makeSeededRandomEngine(iter, index, 1);
+        thrust::default_random_engine rng_dof = makeSeededRandomEngine(iter, index, -2);
         thrust::uniform_real_distribution<float> dofUniform(0, 1);
 
-        
-
         glm::vec2 aperturePoint = cam.aperture * transformToDisk(
-            sampleRandomJittered(glm::vec2{ dofUniform(rng_dof), dofUniform(rng_dof) }, 1000, iter)
+            sampleRandomStratified(glm::vec2{ dofUniform(rng_dof), dofUniform(rng_dof) }, iter)
         );
         float perpendicularRayDirection = glm::dot(ray.direction, cam.view);
         float t = cam.focalDistance / perpendicularRayDirection;
@@ -373,15 +378,16 @@ __global__ void shadeMaterial(
             // Set up the RNG
             // LOOK: this is how you use thrust's RNG! Please look at
             // makeSeededRandomEngine as well.
-            thrust::default_random_engine rng = makeSeededRandomEngine(iter, idx, 0);
+            thrust::default_random_engine rng = makeSeededRandomEngine(iter, idx, path.remainingBounces);
             // thrust::uniform_real_distribution<float> u01(0, 1);
 
             // Compute intersection point on surface
-            glm::vec3 intersectionPoint = path.ray.origin + intersection.t * path.ray.direction;
+            glm::vec3 intersectionPoint = getPointOnRay(path.ray, intersection.t);
 
-            path.color *= materialColor; // glm::dot(intersection.surfaceNormal, pathSegments[idx].ray.direction)* materialColor;
+            if (!material.hasRefractive)
+                path.color *= materialColor; // glm::dot(intersection.surfaceNormal, pathSegments[idx].ray.direction)* materialColor;
 
-            scatterRay(path, intersectionPoint, intersection.surfaceNormal, materials[intersection.materialId], rng);
+            scatterRay(path, intersectionPoint, intersection.surfaceNormal, material, rng, iter);
 
             --path.remainingBounces;
         }
@@ -569,7 +575,7 @@ void pathtrace(uchar4* pbo, int frame, int iter)
 
             // Removes entries with 1s in the conditionBuffer
             thrust_paths_end = thrust::remove_if(
-                thrust_paths, thrust_paths + numPaths, thrust_conditionBuffer, thrust::identity<bool>());
+                thrust_paths, thrust_paths + numPaths, thrust_conditionBuffer, thrust::identity<bool>());        
             cudaDeviceSynchronize();
 
             numPaths = thrust_paths_end - thrust_paths;

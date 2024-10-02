@@ -5,6 +5,8 @@
 #include <unordered_map>
 #include "json.hpp"
 #include "scene.h"
+#include "tiny_gltf.h"
+
 using json = nlohmann::json;
 
 Scene::Scene(string filename)
@@ -23,6 +25,44 @@ Scene::Scene(string filename)
         exit(-1);
     }
 }
+
+/*void loadMesh()
+{
+    tinygltf::Model model;
+    tinygltf::TinyGLTF gltf_ctx;
+    std::string err;
+    std::string warn;
+    std::string input_filename{ "mesh.glb" };
+    std::string ext{ "glb" };
+
+    bool ret = false;
+    if (ext.compare("glb") == 0) {
+        std::cout << "Reading binary glTF" << std::endl;
+        // assume binary glTF.
+        ret = gltf_ctx.LoadBinaryFromFile(&model, &err, &warn,
+            input_filename.c_str());
+    }
+    else {
+        std::cout << "Reading ASCII glTF" << std::endl;
+        // assume ascii glTF.
+        ret =
+            gltf_ctx.LoadASCIIFromFile(&model, &err, &warn, input_filename.c_str());
+    }
+
+    if (!warn.empty()) {
+        printf("Warn: %s\n", warn.c_str());
+    }
+
+    if (!err.empty()) {
+        printf("Err: %s\n", err.c_str());
+    }
+
+    if (!ret) {
+        printf("Failed to parse glTF\n");
+        return -1;
+    }
+
+}*/
 
 void Scene::loadFromJSON(const std::string& jsonName)
 {
@@ -53,6 +93,13 @@ void Scene::loadFromJSON(const std::string& jsonName)
             newMaterial.color = glm::vec3(col[0], col[1], col[2]);
             newMaterial.hasReflective = 1.0f;
         }
+        else if (p["TYPE"] == "Transparent")
+        {
+            const auto& col = p["RGB"];
+            newMaterial.color = glm::vec3(col[0], col[1], col[2]);
+            newMaterial.hasRefractive = 1.0f;
+            newMaterial.indexOfRefraction = 1.5;
+        }
         MatNameToID[name] = materials.size();
         materials.emplace_back(newMaterial);
     }
@@ -61,14 +108,14 @@ void Scene::loadFromJSON(const std::string& jsonName)
     {
         const auto& type = p["TYPE"];
         Geom newGeom;
-        if (type == "cube")
-        {
-            newGeom.type = CUBE;
-        }
+        if (type == "cube")  newGeom.type = CUBE;
+        else if (type == "sphere") newGeom.type = SPHERE;
         else
         {
-            newGeom.type = SPHERE;
+            newGeom.type = MESH;
+            //loadMesh();
         }
+
         newGeom.materialid = MatNameToID[p["MATERIAL"]];
         const auto& trans = p["TRANS"];
         const auto& rotat = p["ROTAT"];

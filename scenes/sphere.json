@@ -43,7 +43,7 @@
       "ROUGHNESS": 0.5
     },
     "specular_rough_green": {
-      "TYPE": "Specular",
+      "TYPE": "Transparent",
       "RGB": [ 0.35, 0.85, 0.35 ],
       "ROUGHNESS": 0.5
     }
@@ -55,7 +55,7 @@
     "DEPTH": 8,
     "FILE": "sphere",
     "EYE": [ 0.0, 5.0, 10.5 ],
-    "LOOKAT": [ 0.0, 1.0, 0.0 ],
+    "LOOKAT": [ 0.0, 3.0, 0.0 ],
     "UP": [ 0.0, 1.0, 0.0 ],
     "APERTURE": 1.0
   },
