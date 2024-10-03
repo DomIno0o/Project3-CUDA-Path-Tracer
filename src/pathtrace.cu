@@ -349,10 +349,19 @@ __global__ void shadeMaterial(
     int numPaths,
     ShadeableIntersection* shadeableIntersections,
     PathSegment* pathSegments,
-    Material* materials)
+    Material* materials,
+    int depth)
 {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx >= numPaths) return;
+
+    /*static int bounceCount{0};
+    static int stratifiedIdx[NUM_CELLS_STRATIFIED] = ;
+
+    if (bounceCount >= NUM_CELLS_STRATIFIED)
+    {
+
+    }*/
 
     PathSegment& path = pathSegments[idx];
     if (path.remainingBounces <= 0) return;
@@ -564,7 +573,8 @@ void pathtrace(uchar4* pbo, int frame, int iter)
             numPaths,
             dev_intersections,
             dev_paths,
-            dev_materials
+            dev_materials,
+            depth
         );
         checkCUDAError("shadeFakeMaterial");
         cudaDeviceSynchronize();
